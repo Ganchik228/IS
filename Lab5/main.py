@@ -100,7 +100,6 @@ def genetic_algorithm(target):
 
 
 def print_result(individual, target):
-    """Вывод выбранных сумок и итоговой суммы."""
     selected = [(NAMES[i], PRICES[i]) for i in range(N) if individual[i] == 1]
     total = sum(price for _, price in selected)
 
