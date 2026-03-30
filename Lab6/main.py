@@ -3,7 +3,7 @@ from PIL import Image, ImageDraw
 import numpy as np
 import easyocr
 
-reader = easyocr.Reader(['en'], gpu=False)
+reader = easyocr.Reader(['ru'], gpu=False)
 
 root = tk.Tk()
 root.title("Распознавание текста")

@@ -1,4 +1,6 @@
 import random
+import tkinter as tk
+from tkinter import messagebox, ttk
 
 BAGS = {
     "Сумка-1":  1,   "Сумка-2":  2,   "Сумка-3":  3,
@@ -61,7 +63,7 @@ def mutate(individual):
             individual[i] = 1 - individual[i]
 
 
-def genetic_algorithm(target):
+def genetic_algorithm(target, progress_callback=None):
     population = [random_individual() for _ in range(POPULATION_SIZE)]
 
     for generation in range(1, GENERATIONS + 1):
@@ -72,11 +74,20 @@ def genetic_algorithm(target):
 
         if generation % 500 == 0 or best_fit == 0:
             total = sum(p * g for p, g in zip(PRICES, population[best_idx]))
-            print(f"Поколение {generation:>5}: лучшая разница = {best_fit} руб. "
-                  f"(сумма = {total} руб.)")
+            message = (
+                f"Поколение {generation:>5}: лучшая разница = {best_fit} руб. "
+                f"(сумма = {total} руб.)"
+            )
+            if progress_callback:
+                progress_callback(message)
+            else:
+                print(message)
 
         if best_fit == 0:
-            print(">>> Найдено точное совпадение!")
+            if progress_callback:
+                progress_callback(">>> Найдено точное совпадение!")
+            else:
+                print(">>> Найдено точное совпадение!")
             return population[best_idx], generation
 
         sorted_indices = sorted(range(POPULATION_SIZE), key=lambda i: fitnesses[i])
@@ -114,13 +125,158 @@ def print_result(individual, target):
     print("=" * 55)
 
 
-def main():
-    target = int(input("Введите целевую цену (руб.): "))
-    print(f"\nЗапуск генетического алгоритма для целевой цены {target} руб.\n")
+def build_result(individual, target):
+    selected = [(NAMES[i], PRICES[i]) for i in range(N) if individual[i] == 1]
+    total = sum(price for _, price in selected)
+    diff = abs(total - target)
+    return selected, total, diff
 
-    best_individual, gen = genetic_algorithm(target)
-    print_result(best_individual, target)
-    print(f"Алгоритм завершился на поколении {gen}")
+
+class GeneticApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Генетический алгоритм подбора сумок")
+        self.root.geometry("900x650")
+        self.root.minsize(760, 520)
+
+        self.target_var = tk.StringVar()
+
+        self.total_var = tk.StringVar(value="0 руб.")
+        self.diff_var = tk.StringVar(value="0 руб.")
+        self.count_var = tk.StringVar(value="0")
+        self.gen_var = tk.StringVar(value="-")
+
+        self._build_ui()
+
+    def _build_ui(self):
+        control_frame = ttk.Frame(self.root, padding=10)
+        control_frame.pack(fill=tk.X)
+
+        ttk.Label(control_frame, text="Целевая цена (руб.):").pack(side=tk.LEFT)
+        self.target_entry = ttk.Entry(control_frame, textvariable=self.target_var, width=16)
+        self.target_entry.pack(side=tk.LEFT, padx=(8, 10))
+        self.target_entry.focus_set()
+
+        self.run_button = ttk.Button(control_frame, text="Запустить", command=self.run_algorithm)
+        self.run_button.pack(side=tk.LEFT)
+
+        self.root.bind("<Return>", lambda _: self.run_algorithm())
+
+        summary = ttk.LabelFrame(self.root, text="Итог", padding=10)
+        summary.pack(fill=tk.X, padx=10, pady=(0, 10))
+
+        ttk.Label(summary, text="Набранная сумма:").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        ttk.Label(summary, textvariable=self.total_var).grid(row=0, column=1, sticky="w")
+
+        ttk.Label(summary, text="Разница:").grid(row=0, column=2, sticky="w", padx=(20, 8))
+        ttk.Label(summary, textvariable=self.diff_var).grid(row=0, column=3, sticky="w")
+
+        ttk.Label(summary, text="Выбрано сумок:").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=(6, 0))
+        ttk.Label(summary, textvariable=self.count_var).grid(row=1, column=1, sticky="w", pady=(6, 0))
+
+        ttk.Label(summary, text="Поколение завершения:").grid(row=1, column=2, sticky="w", padx=(20, 8), pady=(6, 0))
+        ttk.Label(summary, textvariable=self.gen_var).grid(row=1, column=3, sticky="w", pady=(6, 0))
+
+        content = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
+        content.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+
+        left_frame = ttk.LabelFrame(content, text="Выбранные сумки", padding=8)
+        right_frame = ttk.LabelFrame(content, text="Все сумки", padding=8)
+        content.add(left_frame, weight=2)
+        content.add(right_frame, weight=3)
+
+        self.tree = ttk.Treeview(left_frame, columns=("name", "price"), show="headings", height=16)
+        self.tree.heading("name", text="Сумка")
+        self.tree.heading("price", text="Цена (руб.)")
+        self.tree.column("name", width=170, anchor="w")
+        self.tree.column("price", width=110, anchor="e")
+
+        tree_scroll = ttk.Scrollbar(left_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=tree_scroll.set)
+
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        tree_scroll.pack(side=tk.LEFT, fill=tk.Y)
+
+        self.all_tree = ttk.Treeview(right_frame, columns=("name", "price", "selected"), show="headings", height=16)
+        self.all_tree.heading("name", text="Сумка")
+        self.all_tree.heading("price", text="Цена (руб.)")
+        self.all_tree.heading("selected", text="Выбрана")
+        self.all_tree.column("name", width=170, anchor="w")
+        self.all_tree.column("price", width=110, anchor="e")
+        self.all_tree.column("selected", width=90, anchor="center")
+
+        all_tree_scroll = ttk.Scrollbar(right_frame, orient=tk.VERTICAL, command=self.all_tree.yview)
+        self.all_tree.configure(yscrollcommand=all_tree_scroll.set)
+
+        self.all_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        all_tree_scroll.pack(side=tk.LEFT, fill=tk.Y)
+
+        self._fill_all_bags_table()
+
+    def append_log(self, message):
+        self.root.update_idletasks()
+
+    def clear_results(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        self._fill_all_bags_table()
+
+        self.total_var.set("0 руб.")
+        self.diff_var.set("0 руб.")
+        self.count_var.set("0")
+        self.gen_var.set("-")
+
+    def _fill_all_bags_table(self, selected_indices=None):
+        for item in self.all_tree.get_children():
+            self.all_tree.delete(item)
+
+        selected_indices = selected_indices or set()
+        for i, (name, price) in enumerate(zip(NAMES, PRICES)):
+            mark = "Да" if i in selected_indices else "Нет"
+            self.all_tree.insert("", tk.END, values=(name, price, mark))
+
+    def run_algorithm(self):
+        raw_value = self.target_var.get().strip()
+        if not raw_value:
+            messagebox.showwarning("Ошибка ввода", "Введите целевую цену.")
+            return
+
+        try:
+            target = int(raw_value)
+        except ValueError:
+            messagebox.showerror("Ошибка ввода", "Целевая цена должна быть целым числом.")
+            return
+
+        if target < 0:
+            messagebox.showerror("Ошибка ввода", "Целевая цена не может быть отрицательной.")
+            return
+
+        self.clear_results()
+        self.run_button.configure(state=tk.DISABLED)
+
+        try:
+            best_individual, generation = genetic_algorithm(target, progress_callback=self.append_log)
+            selected, total, diff = build_result(best_individual, target)
+
+            for name, price in selected:
+                self.tree.insert("", tk.END, values=(name, price))
+
+            selected_indices = {i for i, g in enumerate(best_individual) if g == 1}
+            self._fill_all_bags_table(selected_indices)
+
+            self.total_var.set(f"{total} руб.")
+            self.diff_var.set(f"{diff} руб.")
+            self.count_var.set(str(len(selected)))
+            self.gen_var.set(str(generation))
+        finally:
+            self.run_button.configure(state=tk.NORMAL)
+
+
+def main():
+    root = tk.Tk()
+    app = GeneticApp(root)
+    root.mainloop()
 
 
 if __name__ == "__main__":
